@@ -16,6 +16,6 @@ while True:
     display.print_cpu(cpu)                                   # taking the cpu temprature and sending it to display.py
     display.print_ram(ram)                                   #same as above but with the ram intake
     display.show_footer() 
-    safety.check_treshhold
+    safety.check_treshhold(cpu, ram)
 
     continue
