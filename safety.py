@@ -1,5 +1,8 @@
 import threading
 from jira import JIRA
+import os
+import yaml
+from dotenv import load_dotenv
 
 cpu_strikes = 0             #cpu strikes is the trigger for a jira ticket, as soon as this hits 5, a jira ticket will be created.
 cpu_critical = 0             #cpu critical is the trigger for a phone call or sms, as soon as this hits 5, a phone call will be done.
@@ -10,7 +13,7 @@ ram_reset = 0
 
 def check_treshhold(cpu, ram):
     global cpu_strikes, cpu_critical, cpu_reset             #lets the if function access the variables above
-    if cpu < 80:
+    if cpu < cpu_warn_tresh:
         cpu_reset += 1                                      #adds to the reset counter 
     if cpu >= 80 and cpu < 95:
         cpu_strikes += 1                                    #adds a "strike" to the counter
@@ -61,9 +64,17 @@ def check_treshhold(cpu, ram):
 
 def create_jira_ticket(part, part_value):
     try: 
+
+        jira_url = os.getenv("JIRA_URL")
+        jira_email = os.getenv("JIRA_EMAIL")
+        jira_token = os.getenv("JIRA_TOKEN")                                #gets the names from the .env file and sets them as the JIRA_URL, JIRA_EMAIL, JIRA_TOKEN variables
+
+        if not jira_url or not jira_email or not jira_token:
+            raise ValueError("Missing required JIRA environment variables (JIRA_URL, JIRA_EMAIL, JIRA_TOKEN)")              #if one of the Variables isnt set, Python will throw a Value Error
+        
         jira_connection = JIRA(
-            options={'server': 'https://xxx.atlassian.net'}, 
-            basic_auth=('xxx', 'xxx')
+            options={'server': jira_url}, 
+            basic_auth=(jira_email, jira_token)
         )
         ticket_data = {
             'project': {'key': 'KAN'},
