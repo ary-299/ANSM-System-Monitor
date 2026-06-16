@@ -45,7 +45,8 @@ def check_treshhold(cpu, ram):
         ticket_sender.start()                               # acctually runs the def "create_jira_ticket"
         cpu_strikes = 0                                     # reset the counter so it doesnt spam
     if cpu_critical == 5:
-        pass #TODO: add code for phone call
+        calling_twl = threading.Thread(target=send_critical_alert, args=("CPU",cpu))
+        calling_twl.start()
         cpu_critical = 0
     if cpu_reset == 5:
         cpu_critical = 0
@@ -73,7 +74,8 @@ def check_treshhold(cpu, ram):
         ticket_sender.start()
         ram_strikes = 0                                     # Added reset to prevent ticket spamming!
     if ram_critical == 5:
-        pass #TODO: code for phone call / sms here 
+        calling_twl = threading.Thread(target=send_critical_alert, args=("RAM",ram))
+        calling_twl.start()
         ram_critical = 0
     if ram_reset == 5:
         ram_strikes = 0
@@ -102,22 +104,66 @@ def create_jira_ticket(part, part_value):
         
         jira_connection = JIRA(
             options={'server': jira_url}, 
-            basic_auth=(jira_email, jira_token)
+            basic_auth=(jira_email, jira_token)         #entering the email of the jira account and the API token
         )
         ticket_data = {
-            'project': {'key': 'KAN'},
-            'issuetype': {'name': 'Task'},
-            'summary': f'WARNING:{part} usage too high!',
-            'description': f'The server {part} utilization is dangerously high. Current value: {part_value}%.',
-            'priority': {'name': 'High'}
+            'project': {'key': 'KAN'},                                                #ticket name (bottm left of the ticket)
+            'issuetype': {'name': 'Task'},                                                #task, like idk its a task thats editable, yall know how to use jira ig, just accept that this is here
+            'summary': f'WARNING:{part} usage too high!',                                  #Big text in the centre of the ticket, "header of the ticket"
+            'description': f'The server {part} utilization is dangerously high. Current value: {part_value}%.',     #closer information regarding the ticket
+            'priority': {'name': 'High'}                                                       #sets priority
         }
-        new_issue = jira_connection.create_issue(fields=ticket_data)                                        
+        new_issue = jira_connection.create_issue(fields=ticket_data)                                #creates the ticket itself                                    
         print(f"{part} usage dangerously high. Check {new_issue.key} on Jira for more information!")
 
     except Exception as e:
-        print(f"\n[JIRA ERROR] Failed to create ticket: {e}")
+        print(f"\n[JIRA ERROR] Failed to create ticket: {e}")                                            #if, for whatever reason, jira or python fails to create the ticket, it will tell you.
+                                                                                                        #the fact that it even tried to create a ticket should be enough for the moment
 
 
 
 #================== Twilio Call(critical alert)================================
 
+def send_critical_alert(part, part_value):
+        account_sid=os.getenv("TWILIO_ACCOUNT_SID")             #setting the variables from the .env file here for simplicity
+        auth_token=os.getenv("TWILIO_AUTH_TOKEN")
+        from_num=os.getenv("TWILIO_PHONENUM")
+        to_num=os.getenv("TO_PHONE_NUM")
+
+        alert_message=f"ALERT! {part} IS REACHING CRITICAL LIMITS! CURRENT USAGE: {part_value}"     #sms set as "alert_message" variable for simplicity
+
+        if not account_sid:
+            print("\nERROR Missing or incorrect Account SID in .env! (TWILIO_ACCOUNT_SID)")         #Lets Python tell you exactly what part of the entered data in the .env file is wrong
+            return
+        if not auth_token:
+            print("\nERROR Missing or incorrect authentication Token in .env! (TWILIO_AUTH_TOKEN)")
+            return
+        if not from_num:
+            print("\nERROR Missing or incorrect Twilion Phone Number in .env! (TWILIO_PHONENUM)")
+            return
+        if not to_num:
+            print("\nERROR Missing or incorrect reciever Phone numer in .env! (TO_PHONE_NUM)")
+            return
+
+        if "mock_" in account_sid or "YOUR_TWILIO" in account_sid:                                  #AI generated mock for testing, irrelevant for real users, debug / dev only
+            print("\n" + "="*60)
+            print("📱 [TWILIO SIMULATION MODE - LOGIC VERIFIED]")
+            print(f"TO: {to_num}")
+            print(f"FROM: {from_num}")
+            print(f"BODY: {alert_message}")
+            print("📞 STATUS: Simulated emergency alert handled safely!")
+            print("="*60 + "\n")
+        else:
+            try:
+                from twilio.rest import Client                                                      #in the mock code, python checks for "mock_" in "account_sid" or "YOUR_TWILIO" in account_sid,
+                client = Client(account_sid, auth_token)                                            # if he doesnt find it, he knows that this is not a mock and starts the acctual code
+
+                message = client.messages.create(                                                   #Creates the acctual SMS to send, sets it together and sends it
+                    body=alert_message,
+                    from_=from_num,
+                    to=to_num
+                )
+                print("Message sent successfully! ~Twilio")                                         #Message that appears in the main interface if a sms has been sent
+
+            except Exception as e:
+                print(f"SENDING MESSAGE FAILED: {e}, server might be dead, or burnt, or whatever, im probably cooked by the time you find this")    #if, for whatever reason, twilio cant send a message, it will only display this messaage
