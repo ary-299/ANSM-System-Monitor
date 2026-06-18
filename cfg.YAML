@@ -3,6 +3,8 @@ thresholds:
   cpu_crit_tresh: 95
   ram_warn_tresh: 80
   ram_crit_tresh: 95
+  disk_warn_tresh: 80
+  disk_crit_tresh: 95
 
 settings:
   check_interval_seconds: 5
