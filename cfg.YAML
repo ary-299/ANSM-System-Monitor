@@ -5,6 +5,10 @@ thresholds:
   ram_crit_tresh: 95
   disk_warn_tresh: 80
   disk_crit_tresh: 95
+  download_warn_tresh: 10
+  download_crit_tresh: 5
+  upload_warn_tresh: 6
+  upload_crit_tresh: 4
 
 settings:
-  check_interval_seconds: 5
+  check_interval_seconds: 1
