@@ -2,12 +2,14 @@ import psutil
 import os
 import math
 import colorama
+from rich.console import Console
 import time
 from colorama import Fore, Back, Style, init
 import yaml
 import display
 import safety
 
+console = Console()
 with open('cfg.yaml', 'r') as f:                                            # Load configuration from YAML file cleanly
     config = yaml.safe_load(f)
 
@@ -26,7 +28,7 @@ os.system('cls' if os.name == 'nt' else 'clear')
 old_bytes_sent = psutil.net_io_counters().bytes_sent
 old_bytes_recv = psutil.net_io_counters().bytes_recv
 while True:
-    cpu = psutil.cpu_percent()                  
+    cpu =  psutil.cpu_percent()            
     ram = psutil.virtual_memory().percent # getting ram percentage and setting it as the "ram" variable
     Cused = psutil.disk_usage("C://").used
     Ctotal = psutil.disk_usage("C://").total
@@ -48,11 +50,13 @@ while True:
     
     os.system('cls' if os.name == 'nt' else 'clear')
     display.show_header() 
+    console.print("======== Hardware =========\n", style="#818589")
     display.print_cpu(cpu)      # taking the cpu tracking number and sending it over to display.py
-    display.print_ram(ram)      # same as above but with the live ram intake data
+    display.print_ram(ram)    
+    display.print_disk(Cprec)      # same as above but with the live ram intake data
+    console.print("========== Wifi ==========\n", style="#818589")
     display.print_download(speed_recv)
     display.print_upload(speed_sent)
-    display.print_disk(Cprec)
     display.show_footer() 
     
     # passing the live system numbers AND the limits directly into safety.py so it can process them instantly

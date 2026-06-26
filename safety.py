@@ -12,22 +12,75 @@ config_path = "cfg.YAML"
 
 # Open up the YAML file so we can read it
 with open(config_path, "r", encoding="utf-8") as f:
-    # Turn the YAML text into a normal Python dictionary called cfg
     cfg = yaml.safe_load(f)
 
-# Get the threshold limits from the YAML file using .get()
-cpu_warn_tresh = cfg.get("cpu_warn_tresh")
-ram_warn_tresh = cfg.get("ram_warn_tresh") 
-cpu_crit_tresh = cfg.get("cpu_crit_tresh")
-ram_crit_tresh = cfg.get("ram_crit_tresh") 
+# Dig safely into the nested thresholds and settings sections
+threshold_dict = cfg.get("thresholds") or {}
+settings_dict = cfg.get("settings") or {}
+
+# List with active alert strings vvv
+active_alerts = []
+total_tickets_created = 0  #Session tracker
+# Safely extract values and convert to integers
+cpu_warn_tresh = int(threshold_dict.get("cpu_warn_tresh") or 80)
+ram_warn_tresh = int(threshold_dict.get("ram_warn_tresh") or 80) 
+cpu_crit_tresh = int(threshold_dict.get("cpu_crit_tresh") or 95)
+ram_crit_tresh = int(threshold_dict.get("ram_crit_tresh") or 95) 
+check_interval_seconds = int(settings_dict.get("check_interval_seconds") or 5)
 
 # Counter variables initialization
-cpu_strikes = 0             # cpu strikes is the trigger for a jira ticket, as soon as this hits 5, a jira ticket will be created.
-cpu_critical = 0            # cpu critical is the trigger for a phone call or sms, as soon as this hits 5, a phone call will be done.
-cpu_reset = 0               # cpu reset is the reset trigger for the values above. As soon as this value hits 5, both critical and strike will be set back to zero
-ram_strikes = 0             # same functions as the cpu values, just replace "cpu" with "ram" while reading and voila, you have your explanations!
+cpu_strikes = 0             
+cpu_critical = 0            
+cpu_reset = 0               
+ram_strikes = 0             
 ram_critical = 0
 ram_reset = 0
+
+# --- PERSISTENT SEED STATE AND MESSAGE VARIABLES ---
+total_tickets_created = 0   # Total tickets created since monitor session started
+
+# Booleans tracking active alert states
+cpu_ticket_active = False
+cpu_alert_active = False
+ram_ticket_active = False
+ram_alert_active = False
+
+# Message buffers to hold content for the recurring reprint loops
+active_cpu_ticket_msg = ""
+active_cpu_alert_msg = ""
+active_ram_ticket_msg = ""
+active_ram_alert_msg = ""
+
+
+# ==================== ASYNCHRONOUS REPRINT LOOPS ====================
+def loop_cpu_ticket_print():
+    global cpu_ticket_active, active_cpu_ticket_msg, check_interval_seconds
+    if cpu_ticket_active:
+        if active_cpu_ticket_msg:
+            print(active_cpu_ticket_msg)
+        threading.Timer(check_interval_seconds, loop_cpu_ticket_print).start()
+
+def loop_cpu_alert_print():
+    global cpu_alert_active, active_cpu_alert_msg, check_interval_seconds
+    if cpu_alert_active:
+        if active_cpu_alert_msg:
+            print(active_cpu_alert_msg)
+        threading.Timer(check_interval_seconds, loop_cpu_alert_print).start()
+
+def loop_ram_ticket_print():
+    global ram_ticket_active, active_ram_ticket_msg, check_interval_seconds
+    if ram_ticket_active:
+        if active_ram_ticket_msg:
+            print(active_ram_ticket_msg)
+        threading.Timer(check_interval_seconds, loop_ram_ticket_print).start()
+
+def loop_ram_alert_print():
+    global ram_alert_active, active_ram_alert_msg, check_interval_seconds
+    if ram_alert_active:
+        if active_ram_alert_msg:
+            print(active_ram_alert_msg)
+        threading.Timer(check_interval_seconds, loop_ram_alert_print).start()
+
 
 # The fixed function: gets its thresholds dropped right into it from main.py
 def check_treshhold(cpu, ram, cpu_warn, cpu_crit, ram_warn, ram_crit):
@@ -36,43 +89,33 @@ def check_treshhold(cpu, ram, cpu_warn, cpu_crit, ram_warn, ram_crit):
     global ram_strikes, ram_critical, ram_reset
     
     # ==================== CPU MONITORING ====================
-    # If the CPU is chill and below the warning limit, tick up the reset counter
     if cpu < cpu_warn:
         cpu_reset += 1                                      
         
-    # If it hits the warning zone but hasn't gone completely critical yet
     if cpu >= cpu_warn and cpu < cpu_crit:
-        cpu_strikes += 1                                    # adds a "strike" to the counter
-        cpu_reset = 0                                       # set reset to 0 so it doesn't try to clear the strikes while it's hot
+        cpu_strikes += 1                                    
+        cpu_reset = 0                                       
         
-    # If the CPU goes into absolute overdrive and hits the critical limit
     if cpu >= cpu_crit:
-        cpu_critical += 1                                   # adds to the critical counter for the sms trigger
-        cpu_reset = 0                                       # set reset to 0 as soon as we're in a danger zone so it doesn't keep counting
+        cpu_critical += 1                                   
+        cpu_reset = 0                                       
         
-    # Once you hit 5 strikes, it's time to make a Jira ticket
     if cpu_strikes == 5:
-        # tells python what def to get ready to run in the background
         ticket_sender = threading.Thread(target=create_jira_ticket, args=("CPU", cpu))
-        ticket_sender.start()                               # actually runs the def "create_jira_ticket" asynchronously
-        cpu_strikes = 0                                     # reset the counter so it doesn't spam tickets
+        ticket_sender.start()                               
+        cpu_strikes = 0                                     
         
-    # If it stays critical for 5 checks, send out the emergency alert
     if cpu_critical == 5:
-        # spins up a thread to run the twilio alert without freezing the main screen
         calling_twl = threading.Thread(target=send_critical_alert, args=("CPU", cpu))
-        calling_twl.start()                                 # shoots the thread off to run
-        cpu_critical = 0                                    # reset the counter so you don't get 50 texts a minute
+        calling_twl.start()                                 
+        cpu_critical = 0                                    
         
-    # If the server cools down and hits 5 clean checks in a row, wipe everything
     if cpu_reset == 5:
         cpu_critical = 0
         cpu_strikes = 0
         cpu_reset = 0
 
-
     # ==================== RAM MONITORING ====================
-    # Check comments above, same exact logic here but just for RAM instead of CPU!
     if ram < ram_warn:
         ram_reset += 1  
         
@@ -102,88 +145,98 @@ def check_treshhold(cpu, ram, cpu_warn, cpu_crit, ram_warn, ram_crit):
 
 # ========================== JIRA TICKET CREATION =======================================
 def create_jira_ticket(part, part_value):
+    global total_tickets_created, cpu_ticket_active, ram_ticket_active, active_cpu_ticket_msg, active_ram_ticket_msg
     try: 
-        # gets the credentials from your local hidden .env file
         jira_url = os.getenv("JIRA_URL")
         jira_email = os.getenv("JIRA_EMAIL")
         jira_token = os.getenv("JIRA_TOKEN") 
 
-        # if one of the variables isn't set, Python will throw a ValueError
         if not jira_url or not jira_email or not jira_token:
             raise ValueError("Missing required JIRA environment variables (JIRA_URL, JIRA_EMAIL, JIRA_TOKEN)") 
         
-        # entering the email of the jira account and the API token to log in
         jira_connection = JIRA(
             options={'server': jira_url}, 
             basic_auth=(jira_email, jira_token) 
         )
         
-        # setting up all the fields that will be dropped into the Jira ticket
         ticket_data = {
-            'project': {'key': 'KAN'},                                                    # ticket name / project key (bottom left of the ticket)
-            'issuetype': {'name': 'Task'},                                                # task, like idk it's an editable task, yall know how to use jira ig, just accept it's here
-            'summary': f'WARNING:{part} usage too high!',                                 # Big text in the centre of the ticket, "header of the ticket"
-            'description': f'The server {part} utilization is dangerously high. Current value: {part_value}%.', # closer information regarding the ticket details
-            'priority': {'name': 'High'}                                                  # sets priority level
+            'project': {'key': 'KAN'},                                                                    
+            'issuetype': {'name': 'Task'},                                                                
+            'summary': f'WARNING:{part} usage too high!',                                                 
+            'description': f'The server {part} utilization is dangerously high. Current value: {part_value}%.', 
+            'priority': {'name': 'High'}                                                                  
         }
         
-        # this line actually builds the ticket on your remote board
         new_issue = jira_connection.create_issue(fields=ticket_data)                                    
-        print(f"{part} usage dangerously high. Check {new_issue.key} on Jira for more information!")
+        success_msg = f"{part} usage dangerously high. Check {new_issue.key} on Jira for more information!"
+        
+        total_tickets_created += 1
+        
+        # Set persistent state message and spin up asynchronous loop thread
+        if part == "CPU":
+            active_cpu_ticket_msg = success_msg
+            if not cpu_ticket_active:
+                cpu_ticket_active = True
+                threading.Thread(target=loop_cpu_ticket_print, daemon=True).start()
+        else:
+            active_ram_ticket_msg = success_msg
+            if not ram_ticket_active:
+                ram_ticket_active = True
+                threading.Thread(target=loop_ram_ticket_print, daemon=True).start()
 
     except Exception as e:
-        # if, for whatever reason, jira or python fails to create the ticket, it will tell you why here
         print(f"\n[JIRA ERROR] Failed to create ticket: {e}")
 
 
 # ================== Twilio Call (critical alert) ================================
 def send_critical_alert(part, part_value):
-        # setting the variables from the .env file here for simplicity
-        account_sid = os.getenv("TWILIO_ACCOUNT_SID")            
-        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        from_num = os.getenv("TWILIO_PHONENUM")
-        to_num = os.getenv("TO_PHONE_NUM")
+    global cpu_alert_active, ram_alert_active, active_cpu_alert_msg, active_ram_alert_msg
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")            
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    from_num = os.getenv("TWILIO_PHONENUM")
+    to_num = os.getenv("TO_PHONE_NUM")
 
-        # setting up the text body as a variable for simplicity
-        alert_message = f"ALERT! {part} IS REACHING CRITICAL LIMITS! CURRENT USAGE: {part_value}"     
+    alert_message = f"ALERT! {part} IS REACHING CRITICAL LIMITS! CURRENT USAGE: {part_value}"     
 
-        # Lets Python tell you exactly what part of the entered data in the .env file is missing
-        if not account_sid:
-            print("\nERROR Missing or incorrect Account SID in .env! (TWILIO_ACCOUNT_SID)")         
-            return
-        if not auth_token:
-            print("\nERROR Missing or incorrect authentication Token in .env! (TWILIO_AUTH_TOKEN)")
-            return
-        if not from_num:
-            print("\nERROR Missing or incorrect Twilio Phone Number in .env! (TWILIO_PHONENUM)")
-            return
-        if not to_num:
-            print("\nERROR Missing or incorrect receiver Phone number in .env! (TO_PHONE_NUM)")
-            return
+    if not account_sid or not auth_token or not from_num or not to_num:
+        print("\n[TWILIO ERROR] Missing credential variables in local environment file.")
+        return
 
-        # AI generated mock for testing, irrelevant for real users, debug / dev only
-        if "mock_" in account_sid or "YOUR_TWILIO" in account_sid:                                  
-            print("\n" + "="*60)
-            print("📱 [TWILIO SIMULATION MODE - LOGIC VERIFIED]")
-            print(f"TO: {to_num}")
-            print(f"FROM: {from_num}")
-            print(f"BODY: {alert_message}")
-            print("📞 STATUS: Simulated emergency alert handled safely!")
-            print("="*60 + "\n")
+    if "mock_" in account_sid or "YOUR_TWILIO" in account_sid:                                   
+        sim_msg = f"\n📱 [TWILIO SIMULATION MODE]\nTO: {to_num}\nFROM: {from_num}\nBODY: {alert_message}\n📞 STATUS: Active alert handled safely!"
+        
+        if part == "CPU":
+            active_cpu_alert_msg = sim_msg
+            if not cpu_alert_active:
+                cpu_alert_active = True
+                threading.Thread(target=loop_cpu_alert_print, daemon=True).start()
         else:
-            # if he doesn't find the mock keys, he knows this is real and runs the actual code
-            try:
-                from twilio.rest import Client                                                      
-                client = Client(account_sid, auth_token)                                            
+            active_ram_alert_msg = sim_msg
+            if not ram_alert_active:
+                ram_alert_active = True
+                threading.Thread(target=loop_ram_alert_print, daemon=True).start()
+    else:
+        try:
+            from twilio.rest import Client                                                                      
+            client = Client(account_sid, auth_token)                                                            
 
-                # Creates the actual SMS payload, pieces it together, and fires it off
-                message = client.messages.create(                                                   
-                    body=alert_message,
-                    from_=from_num,
-                    to=to_num
-                )
-                print("Message sent successfully! ~Twilio")                                         # Message that appears in the main interface if an sms has been sent
+            message = client.messages.create(                                                                  
+                body=alert_message,
+                from_=from_num,
+                to=to_num
+            )
+            live_msg = f"Message sent successfully! ID: {message.sid} ~Twilio"
+            
+            if part == "CPU":
+                active_cpu_alert_msg = live_msg
+                if not cpu_alert_active:
+                    cpu_alert_active = True
+                    threading.Thread(target=loop_cpu_alert_print, daemon=True).start()
+            else:
+                active_ram_alert_msg = live_msg
+                if not ram_alert_active:
+                    ram_alert_active = True
+                    threading.Thread(target=loop_ram_alert_print, daemon=True).start()
 
-            except Exception as e:
-                # if, for whatever reason, twilio can't send a message, it will display this message
-                print(f"SENDING MESSAGE FAILED: {e}, server might be dead, or burnt, or whatever, im probably cooked by the time you find this")
+        except Exception as e:
+            print(f"SENDING MESSAGE FAILED: {e}")
