@@ -3,6 +3,8 @@ from jira import JIRA
 import os
 import yaml
 from dotenv import load_dotenv
+import requests
+from requests.auth import HTTPBasicAuth
 
 # Load environmental variables from your hidden local .env file
 load_dotenv()
@@ -142,7 +144,6 @@ def check_treshhold(cpu, ram, cpu_warn, cpu_crit, ram_warn, ram_crit):
         ram_critical = 0
         ram_reset = 0
 
-
 # ========================== JIRA TICKET CREATION =======================================
 def create_jira_ticket(part, part_value):
     global total_tickets_created, cpu_ticket_active, ram_ticket_active, active_cpu_ticket_msg, active_ram_ticket_msg
@@ -160,19 +161,17 @@ def create_jira_ticket(part, part_value):
         )
         
         ticket_data = {
-            'project': {'key': 'KAN'},                                                                    
-            'issuetype': {'name': 'Task'},                                                                
-            'summary': f'WARNING:{part} usage too high!',                                                 
+            'project': {'key': 'KAN'},                                                                                 
+            'issuetype': {'name': 'Task'},                                                                             
+            'summary': f'WARNING:{part} usage too high!',                                                                
             'description': f'The server {part} utilization is dangerously high. Current value: {part_value}%.', 
-            'priority': {'name': 'High'}                                                                  
         }
         
-        new_issue = jira_connection.create_issue(fields=ticket_data)                                    
+        new_issue = jira_connection.create_issue(fields=ticket_data)                                                    
         success_msg = f"{part} usage dangerously high. Check {new_issue.key} on Jira for more information!"
         
         total_tickets_created += 1
         
-        # Set persistent state message and spin up asynchronous loop thread
         if part == "CPU":
             active_cpu_ticket_msg = success_msg
             if not cpu_ticket_active:
@@ -186,7 +185,6 @@ def create_jira_ticket(part, part_value):
 
     except Exception as e:
         print(f"\n[JIRA ERROR] Failed to create ticket: {e}")
-
 
 # ================== Twilio Call (critical alert) ================================
 def send_critical_alert(part, part_value):

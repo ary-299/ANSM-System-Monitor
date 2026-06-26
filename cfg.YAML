@@ -11,4 +11,4 @@ thresholds:
   upload_crit_tresh: 2
 
 settings:
-  check_interval_seconds: 2
+  check_interval_seconds: 1

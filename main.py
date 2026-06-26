@@ -8,6 +8,7 @@ from colorama import Fore, Back, Style, init
 import yaml
 import display
 import safety
+import threading
 
 console = Console()
 with open('cfg.yaml', 'r') as f:                                            # Load configuration from YAML file cleanly
@@ -28,7 +29,7 @@ os.system('cls' if os.name == 'nt' else 'clear')
 old_bytes_sent = psutil.net_io_counters().bytes_sent
 old_bytes_recv = psutil.net_io_counters().bytes_recv
 while True:
-    cpu =  psutil.cpu_percent()            
+    cpu =  93            
     ram = psutil.virtual_memory().percent # getting ram percentage and setting it as the "ram" variable
     Cused = psutil.disk_usage("C://").used
     Ctotal = psutil.disk_usage("C://").total
@@ -50,16 +51,26 @@ while True:
     
     os.system('cls' if os.name == 'nt' else 'clear')
     display.show_header() 
-    console.print("======== Hardware =========\n", style="#818589")
-    display.print_cpu(cpu)      # taking the cpu tracking number and sending it over to display.py
+    console.print("====================================\n", style="#818589")
+    console.print("              Hardware              \n", style="#C0C0C0")
+    display.print_cpu(cpu)      # taking the cpu tracking number and sending it over to display.py #C0C0C0
     display.print_ram(ram)    
     display.print_disk(Cprec)      # same as above but with the live ram intake data
-    console.print("========== Wifi ==========\n", style="#818589")
+    console.print("====================================\n", style="#818589")
+    console.print("                 Wifi               \n", style="#C0C0C0")
     display.print_download(speed_recv)
     display.print_upload(speed_sent)
-    display.show_footer() 
-    
-    # passing the live system numbers AND the limits directly into safety.py so it can process them instantly
+    console.print("====================================\n", style="#818589")
+    console.print("             Security               \n", style="#C0C0C0")
     safety.check_treshhold(cpu, ram, cpu_warn, cpu_crit, ram_warn, ram_crit)
+    if safety.cpu_ticket_active and safety.active_cpu_ticket_msg:
+        print(safety.active_cpu_ticket_msg)
+    if safety.ram_ticket_active and safety.active_ram_ticket_msg:
+        print(safety.active_ram_ticket_msg)
+    console.print("====================================\n\n\n", style="#818589")
+    
+    show_footer = threading.Thread(target=display.show_footer, daemon=True)
+
+    show_footer.start()
 
     time.sleep(interval)        # dynamic sleep command that uses the actual check_interval_seconds value from your YAML file
