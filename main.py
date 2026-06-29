@@ -29,7 +29,7 @@ os.system('cls' if os.name == 'nt' else 'clear')
 old_bytes_sent = psutil.net_io_counters().bytes_sent
 old_bytes_recv = psutil.net_io_counters().bytes_recv
 while True:
-    cpu =  93            
+    cpu =  97           
     ram = psutil.virtual_memory().percent # getting ram percentage and setting it as the "ram" variable
     Cused = psutil.disk_usage("C://").used
     Ctotal = psutil.disk_usage("C://").total

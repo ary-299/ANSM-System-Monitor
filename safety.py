@@ -1,10 +1,12 @@
 import threading
 from jira import JIRA
 import os
+import Keyboard_inputs
 import yaml
 from dotenv import load_dotenv
 import requests
 from requests.auth import HTTPBasicAuth
+from rich.console import Console
 
 # Load environmental variables from your hidden local .env file
 load_dotenv()
@@ -37,6 +39,9 @@ cpu_reset = 0
 ram_strikes = 0             
 ram_critical = 0
 ram_reset = 0
+ticket_create = 0
+call_made = 0
+loop_on = 0
 
 # --- PERSISTENT SEED STATE AND MESSAGE VARIABLES ---
 total_tickets_created = 0   # Total tickets created since monitor session started
@@ -59,29 +64,30 @@ def loop_cpu_ticket_print():
     global cpu_ticket_active, active_cpu_ticket_msg, check_interval_seconds
     if cpu_ticket_active:
         if active_cpu_ticket_msg:
-            print(active_cpu_ticket_msg)
-        threading.Timer(check_interval_seconds, loop_cpu_ticket_print).start()
+            threading.Timer(check_interval_seconds, loop_cpu_ticket_print).start()
 
 def loop_cpu_alert_print():
     global cpu_alert_active, active_cpu_alert_msg, check_interval_seconds
     if cpu_alert_active:
         if active_cpu_alert_msg:
-            print(active_cpu_alert_msg)
-        threading.Timer(check_interval_seconds, loop_cpu_alert_print).start()
+            threading.Timer(check_interval_seconds, loop_cpu_alert_print).start()
 
 def loop_ram_ticket_print():
     global ram_ticket_active, active_ram_ticket_msg, check_interval_seconds
     if ram_ticket_active:
         if active_ram_ticket_msg:
-            print(active_ram_ticket_msg)
-        threading.Timer(check_interval_seconds, loop_ram_ticket_print).start()
+            threading.Timer(check_interval_seconds, loop_ram_ticket_print).start()
 
 def loop_ram_alert_print():
     global ram_alert_active, active_ram_alert_msg, check_interval_seconds
     if ram_alert_active:
         if active_ram_alert_msg:
-            print(active_ram_alert_msg)
-        threading.Timer(check_interval_seconds, loop_ram_alert_print).start()
+            threading.Timer(check_interval_seconds, loop_ram_alert_print).start()
+
+def loop_already_created_print():
+    global ticket_create
+    print("")
+    threading.Timer(check_interval_seconds, loop_already_created_print).start()
 
 
 # The fixed function: gets its thresholds dropped right into it from main.py
@@ -89,6 +95,7 @@ def check_treshhold(cpu, ram, cpu_warn, cpu_crit, ram_warn, ram_crit):
     # lets the function access and change the tracking counters we made up top
     global cpu_strikes, cpu_critical, cpu_reset
     global ram_strikes, ram_critical, ram_reset
+    global ticket_create, call_made, loop_on
     
     # ==================== CPU MONITORING ====================
     if cpu < cpu_warn:
@@ -103,9 +110,21 @@ def check_treshhold(cpu, ram, cpu_warn, cpu_crit, ram_warn, ram_crit):
         cpu_reset = 0                                       
         
     if cpu_strikes == 5:
-        ticket_sender = threading.Thread(target=create_jira_ticket, args=("CPU", cpu))
-        ticket_sender.start()                               
-        cpu_strikes = 0                                     
+        if ticket_create == 1 and loop_on == 0:
+            cpu_strikes = 0 
+            ticket_create_msg = threading.Thread(target=loop_already_created_print)
+            loop_on = 1
+            ticket_create_msg.start()
+        elif ticket_create == 0 and loop_on == 0:
+            ticket_sender = threading.Thread(target=create_jira_ticket, args=("CPU", cpu))
+            ticket_sender.start()                               
+            cpu_strikes = 0 
+            ticket_create = 1    
+        elif ticket_create == 1 and loop_on == 1:
+            ""
+        else:
+            print("")  
+            ticket_create = 1                              
         
     if cpu_critical == 5:
         calling_twl = threading.Thread(target=send_critical_alert, args=("CPU", cpu))
@@ -130,9 +149,21 @@ def check_treshhold(cpu, ram, cpu_warn, cpu_crit, ram_warn, ram_crit):
         ram_reset = 0
         
     if ram_strikes == 5:
-        ticket_sender = threading.Thread(target=create_jira_ticket, args=("RAM", ram))
-        ticket_sender.start()
-        ram_strikes = 0                                     
+        if ticket_create == 1 and loop_on == 0:
+            ram_strikes = 0 
+            ticket_create_msg = threading.Thread(target=loop_already_created_print)
+            loop_on = 1
+            ticket_create_msg.start()
+        elif ticket_create == 0 and loop_on == 0:
+            ticket_sender = threading.Thread(target=create_jira_ticket, args=("RAM", ram))
+            ticket_sender.start()                               
+            ram_strikes = 0 
+            ticket_create = 1    
+        elif ticket_create == 1 and loop_on == 1:
+            ""
+        else:
+            print("")  
+            ticket_create = 1                                   
         
     if ram_critical == 5:
         calling_twl = threading.Thread(target=send_critical_alert, args=("RAM", ram))
@@ -168,7 +199,7 @@ def create_jira_ticket(part, part_value):
         }
         
         new_issue = jira_connection.create_issue(fields=ticket_data)                                                    
-        success_msg = f"{part} usage dangerously high. Check {new_issue.key} on Jira for more information!"
+        success_msg = f"{part} usage dangerously high. Check {new_issue.key} on Jira for more information!\n Please press X inside this programm as soon as the ticket is resolved!\nNo new ticket will be created as long as X hasnt been pressed!\n"
         
         total_tickets_created += 1
         
@@ -201,7 +232,7 @@ def send_critical_alert(part, part_value):
         return
 
     if "mock_" in account_sid or "YOUR_TWILIO" in account_sid:                                   
-        sim_msg = f"\n📱 [TWILIO SIMULATION MODE]\nTO: {to_num}\nFROM: {from_num}\nBODY: {alert_message}\n📞 STATUS: Active alert handled safely!"
+        sim_msg = f"\n [TWILIO SIMULATION MODE]\nTO: {to_num}\nFROM: {from_num}\nBODY: {alert_message}\n STATUS: Active alert handled safely!"
         
         if part == "CPU":
             active_cpu_alert_msg = sim_msg
